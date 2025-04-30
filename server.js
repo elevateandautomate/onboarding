@@ -9,7 +9,7 @@ const port = process.env.PORT || 3001; // Render sets the PORT environment varia
 // --- Configuration ---
 const PORKBUN_API_KEY = process.env.PORKBUN_API_KEY;
 const PORKBUN_SECRET_KEY = process.env.PORKBUN_SECRET_KEY;
-const PORKBUN_API_URL = 'https://api.porkbun.com/api/json/v3/domain/check'; // Corrected: Removed trailing slash
+const PORKBUN_API_URL = 'https://api.porkbun.com/api/json/v3/domain/checkDomain'; // Corrected endpoint path
 
 // --- Middleware ---
 app.use(cors()); // Enable CORS for all origins (adjust for production if needed)
