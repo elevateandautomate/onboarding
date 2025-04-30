@@ -9,7 +9,7 @@ const port = process.env.PORT || 3001; // Render sets the PORT environment varia
 // --- Configuration ---
 const PORKBUN_API_KEY = process.env.PORKBUN_API_KEY;
 const PORKBUN_SECRET_KEY = process.env.PORKBUN_SECRET_KEY;
-const PORKBUN_API_URL = 'https://api.porkbun.com/api/json/v3/domain/check/';
+const PORKBUN_API_URL = 'https://api.porkbun.com/api/json/v3/domain/check'; // Corrected: Removed trailing slash
 
 // --- Middleware ---
 app.use(cors()); // Enable CORS for all origins (adjust for production if needed)
@@ -30,7 +30,8 @@ app.post('/api/check-domain', async (req, res) => {
         return res.status(500).json({ error: 'Server configuration error' });
     }
 
-    const url = `${PORKBUN_API_URL}${domainName}`;
+    // Construct URL by joining base URL and domain name
+    const url = `${PORKBUN_API_URL}/${domainName}`; // Add slash here
     const payload = {
         apikey: PORKBUN_API_KEY,
         secretapikey: PORKBUN_SECRET_KEY
@@ -56,7 +57,17 @@ app.post('/api/check-domain', async (req, res) => {
         }
 
     } catch (error) {
-        console.error('Error calling Porkbun API:', error.response ? error.response.data : error.message);
+        // Log detailed error information if available
+        let errorDetails = error.message;
+        if (error.response) {
+            // The request was made and the server responded with a status code
+            // that falls out of the range of 2xx
+            errorDetails = `Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data)}`;
+        } else if (error.request) {
+            // The request was made but no response was received
+            errorDetails = 'No response received from Porkbun API';
+        }
+        console.error('Error calling Porkbun API:', errorDetails);
         res.status(500).json({ error: 'Failed to check domain availability' });
     }
 });
