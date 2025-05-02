@@ -1,29 +1,58 @@
-// Add this route to your server.js
-app.post('/', (req, res) => {
-  console.log('Received POST to root URL:', req.body);
-  
-  // Log everything about this request
+// Add this route right above your existing /send-slack-message route
+app.post('/send-slack-message', async (req, res) => {
+  console.log('Received help message POST request');
   console.log('Headers:', req.headers);
-  console.log('Body:', JSON.stringify(req.body, null, 2));
-  console.log('Query:', req.query);
+  console.log('Body:', req.body);
   
-  // Always return success
-  res.json({ 
-    success: true, 
-    message: 'Request received',
-    receivedData: req.body
-  });
-  
-  // If you have Slack configured, try to send a simple message
-  if (slackClient && targetChannelId) {
+  // Check if we have JSON data field (from the form)
+  let data = req.body;
+  if (req.body.json_data) {
     try {
-      slackClient.chat.postMessage({
-        channel: targetChannelId,
-        text: `Test message from root endpoint: ${JSON.stringify(req.body)}`
-      });
-      console.log('Sent test message to Slack');
+      // Parse the JSON string from the form
+      data = JSON.parse(req.body.json_data);
+      console.log('Parsed JSON data:', data);
     } catch (err) {
-      console.error('Error sending to Slack:', err);
+      console.error('Error parsing JSON data:', err);
     }
+  }
+  
+  // Extract values with fallbacks
+  const firstName = data.firstName || '';
+  const lastName = data.lastName || '';
+  const email = data.email || '';
+  const question = data.question || '';
+  const channelId = data.channel_id || process.env.SLACK_CHANNEL_ID || targetChannelId;
+  
+  console.log('Using channel ID:', channelId);
+  
+  // Rest of your existing code...
+  if (!slackClient) {
+    return res.status(500).json({ error: 'Slack client not initialized' });
+  }
+  
+  if (!channelId) {
+    return res.status(400).json({ error: "Missing 'channel_id' in request body" });
+  }
+  
+  try {
+    // Format the message for Slack
+    const messageText = `🆘 *Help Request* 🆘
+    *Name:* ${firstName} ${lastName}
+    *Email:* ${email}
+    *Question:*
+    >>>${question}`;
+    
+    // Send to Slack
+    const result = await slackClient.chat.postMessage({
+      channel: channelId,
+      text: messageText,
+      mrkdwn: true
+    });
+    
+    console.log('Message sent to Slack successfully');
+    return res.json({ ok: true, message: 'Help request sent successfully' });
+  } catch (error) {
+    console.error('Error sending to Slack:', error);
+    return res.status(500).json({ ok: false, error: error.message });
   }
 });
