@@ -1,27 +1,21 @@
-// Add CORS support - place this near the top of your server.js file
-// First, install cors with: npm install cors
-const cors = require('cors');
-app.use(cors());
+const { WebClient } = require('@slack/web-api');
+require('dotenv').config();
 
-// Add a test endpoint for diagnostics
-app.get('/test', (req, res) => {
-  res.json({ status: 'ok', message: 'API is working' });
-});
+const token = process.env.SLACK_BOT_TOKEN;
+const channelId = process.env.SLACK_CHANNEL_ID;
 
-// Make sure your existing endpoint is properly configured
-// If you don't already have a route for /send-slack-help-message, add one like this:
-app.post('/send-slack-help-message', async (req, res) => {
+const web = new WebClient(token);
+
+async function sendMessage(text) {
   try {
-    console.log('Received help request:', req.body);
-    
-    // Your existing code to process the request and send to Slack
-    // Just make sure it accepts the parameters from the form:
-    // firstName, lastName, email, phone, message, businessName, context, userId
-    
-    // Send success response
-    res.status(200).json({ success: true, message: 'Help request sent to Slack' });
+    await web.chat.postMessage({
+      channel: channelId,
+      text: text,
+    });
+    console.log('Message sent successfully');
   } catch (error) {
-    console.error('Error handling help request:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error sending message:', error);
   }
-});
+}
+
+sendMessage('Hello from my Slack bot!');
