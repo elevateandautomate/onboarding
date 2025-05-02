@@ -1,26 +1,23 @@
 {
-  "name": "onboarding-backend",
+  "name": "onboarding-help-server",
   "version": "1.0.0",
-  "description": "Backend service for domain checks (Porkbun) and Slack notifications.",
+  "description": "Server for handling help requests and domain checks",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "cors": "^2.8.5",
+    "@slack/web-api": "^6.9.1",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=18.0.0"
-  },
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@slack/web-api": "^7.3.0",
-    "axios": "^1.7.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/The-Connector-Group/onboardinghelp.git"
+    "node": ">=14.0.0"
   }
 }
