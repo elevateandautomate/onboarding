@@ -11,7 +11,7 @@ const API_KEY = process.env.PORKBUN_API_KEY || 'pk1_f102a22a1cff9e3a1baf3a59feb3
 const SECRET_KEY = process.env.PORKBUN_SECRET_KEY || 'sk1_bb12902114b667c24cb861d0a4b14209a785f9fae9cb381262107400f4012540';
 
 // ✅ Slack API Credentials
-const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || 'xoxb-8782622636263-8810308655889-ZsAEPEhXvcFtGVlEsOEg0SGF';
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || 'xoxb-8782622636263-8868435722384-NlmMLMhQTzk1OEyxkC2yozC2';
 
 // Enable CORS for all origins
 app.use(cors({ origin: '*' }));
@@ -421,7 +421,42 @@ Our team will be with you shortly to help with your onboarding process. Feel fre
 });
 
 /* =========================================
-   🚀 Start Server
+   � Test Slack Token
+========================================= */
+app.get('/test-slack-token', async (req, res) => {
+  console.log('🔍 Testing Slack token');
+
+  try {
+    // Initialize Slack client
+    const slack = new WebClient(SLACK_BOT_TOKEN);
+
+    // Test the token
+    const result = await slack.auth.test();
+
+    console.log(`✅ Slack token test successful: ${JSON.stringify(result)}`);
+    res.json({
+      status: 'success',
+      message: 'Slack token is valid',
+      team: result.team,
+      user: result.user,
+      botId: result.bot_id
+    });
+  } catch (err) {
+    console.error('❌ Slack token test failed:', err.message);
+
+    const errorResponse = {
+      status: 'error',
+      message: 'Slack token test failed',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    };
+
+    res.status(500).json(errorResponse);
+  }
+});
+
+/* =========================================
+   �🚀 Start Server
 ========================================= */
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
