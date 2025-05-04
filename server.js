@@ -5,7 +5,7 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ Porkbun API Credentials (use environment variables in production)
+// ✅ Porkbun API Credentials
 const API_KEY = process.env.PORKBUN_API_KEY || 'pk1_b66cf696e312c793cea3747eb7f85a6bbe767fb25430ad5419df028a99636b4b';
 const SECRET_KEY = process.env.PORKBUN_SECRET_KEY || 'sk1_05c780319c78ccf836f366b47caf33114f1a57e337cc09fbc08256d59f7cca59';
 
@@ -19,15 +19,24 @@ app.use((req, res, next) => {
 });
 
 /* =========================================
-   🔍 Domain Check Helper (Correct Endpoint)
+   🔍 Domain Check Helper with headers
 ========================================= */
 async function checkDomainAvailability(domain) {
   try {
-    const response = await axios.post('https://porkbun.com/api/json/v3/check', {
-      apikey: API_KEY,
-      secretapikey: SECRET_KEY,
-      domain
-    });
+    const response = await axios.post(
+      'https://porkbun.com/api/json/v3/check',
+      {
+        apikey: API_KEY,
+        secretapikey: SECRET_KEY,
+        domain
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      }
+    );
 
     console.log(`✅ Domain check response:`, response.data);
     return response.data;
@@ -66,12 +75,10 @@ app.post('/api/check-domain', async (req, res) => {
         suggestions: isAvailable ? [] : generateAlternatives(domainName)
       });
     } else {
-      // Known failure, but not a server error
-      console.warn(`⚠️ Porkbun returned FAILURE for domain "${domainName}": ${data.message}`);
       return res.json({
         available: false,
         domain: domainName,
-        error: data.message || 'Unavailable or invalid domain',
+        error: data.message || 'Domain check failed',
         suggestions: generateAlternatives(domainName)
       });
     }
@@ -102,14 +109,23 @@ function generateAlternatives(domain) {
 }
 
 /* =========================================
-   🔄 Ping Porkbun API
+   🔄 Ping Porkbun API + Get Server IP
 ========================================= */
 app.get('/ping', async (req, res) => {
   try {
-    const response = await axios.post('https://porkbun.com/api/json/v3/ping', {
-      apikey: API_KEY,
-      secretapikey: SECRET_KEY
-    });
+    const response = await axios.post(
+      'https://porkbun.com/api/json/v3/ping',
+      {
+        apikey: API_KEY,
+        secretapikey: SECRET_KEY
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      }
+    );
 
     res.json({
       status: response.data.status,
@@ -120,6 +136,21 @@ app.get('/ping', async (req, res) => {
     res.status(500).json({
       error: 'Ping failed',
       details: err.response?.data || err.message
+    });
+  }
+});
+
+/* =========================================
+   📡 My Server IP (to share with Porkbun support)
+========================================= */
+app.get('/my-ip', async (req, res) => {
+  try {
+    const response = await axios.get('https://api.ipify.org?format=json');
+    res.json({ ip: response.data.ip });
+  } catch (err) {
+    res.status(500).json({
+      error: 'Failed to fetch IP address.',
+      details: err.message
     });
   }
 });
