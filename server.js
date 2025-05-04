@@ -554,5 +554,4 @@ app.post('/api/send-slack-message', async (req, res) => {
     };
     
     if (err.data) {
-      errorResponse.slackError = err.data;
-    }
+      errorResponse.slack
