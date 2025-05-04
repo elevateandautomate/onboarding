@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import { WebClient } from '@slack/web-api';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -333,29 +334,86 @@ app.post('/api/create-slack-channel', async (req, res) => {
   }
 
   try {
-    // For now, we'll just log the request and return success
-    // In a real implementation, you would use the Slack API to create the channel
-    console.log(`✅ Slack channel request received for: ${channelName}`);
+    console.log(`✅ Creating Slack channel: ${channelName}`);
     console.log(`✅ User email: ${userEmail}`);
     console.log(`✅ Business name: ${businessName || 'Not provided'}`);
     console.log(`✅ Client name: ${clientName || 'Not provided'}`);
 
-    // Store the request in a database or send it to another service
-    // This is where you would implement the actual Slack channel creation
+    // Initialize Slack client
+    const slack = new WebClient(SLACK_BOT_TOKEN);
+
+    // 1. Create the channel
+    console.log(`🔄 Creating private Slack channel: ${channelName}`);
+    const channelResult = await slack.conversations.create({
+      name: channelName,
+      is_private: true
+    });
+
+    if (!channelResult.ok) {
+      throw new Error(`Failed to create channel: ${channelResult.error}`);
+    }
+
+    const channelId = channelResult.channel.id;
+    console.log(`✅ Channel created with ID: ${channelId}`);
+
+    // 2. Find the user by email
+    console.log(`🔄 Looking up user by email: ${userEmail}`);
+    try {
+      const userLookup = await slack.users.lookupByEmail({
+        email: userEmail
+      });
+
+      if (userLookup.ok && userLookup.user) {
+        const userId = userLookup.user.id;
+        console.log(`✅ Found user with ID: ${userId}`);
+
+        // 3. Add the user to the channel
+        console.log(`🔄 Adding user ${userId} to channel ${channelId}`);
+        await slack.conversations.invite({
+          channel: channelId,
+          users: userId
+        });
+        console.log(`✅ User added to channel`);
+      } else {
+        console.log(`⚠️ User with email ${userEmail} not found in Slack workspace`);
+      }
+    } catch (userError) {
+      console.warn(`⚠️ Could not find or add user: ${userError.message}`);
+      // Continue with channel creation even if user lookup fails
+    }
+
+    // 4. Send a welcome message to the channel
+    const welcomeMessage = `
+:wave: Welcome to your dedicated support channel!
+
+*Business:* ${businessName || 'Not provided'}
+*Contact:* ${clientName || 'Not provided'}
+*Email:* ${userEmail}
+
+Our team will be with you shortly to help with your onboarding process. Feel free to ask any questions here!
+    `;
+
+    await slack.chat.postMessage({
+      channel: channelId,
+      text: welcomeMessage,
+      parse: 'full'
+    });
+    console.log(`✅ Welcome message posted to channel`);
 
     // Return success response
     return res.json({
       success: true,
+      channelId: channelId,
       channelName: channelName,
-      message: 'Slack channel request received successfully',
-      note: 'Your channel will be created shortly and you will be invited via email'
+      message: 'Slack channel created successfully',
+      note: 'You will be invited to the channel shortly'
     });
   } catch (err) {
     console.error(`❌ Error in /api/create-slack-channel endpoint: ${err.message}`);
 
     // Send a more detailed error response
     res.status(500).json({
-      error: 'Failed to process Slack channel request.',
+      error: 'Failed to create Slack channel.',
       details: err.message,
       timestamp: new Date().toISOString()
     });
