@@ -157,3 +157,222 @@ app.post('/api/check-domain', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
+});
+
+/* =========================================
+   💡 Suggest Alternative Domains
+========================================= */
+function generateAlternatives(domain) {
+  console.log(`💡 Generating alternatives for domain: ${domain}`);
+
+  const parts = domain.split('.');
+  if (parts.length < 2) return [];
+
+  const name = parts.slice(0, -1).join('.');
+  const ext = parts[parts.length - 1];
+
+  const alternatives = [
+    `${name}-online.${ext}`,
+    `${name}-web.${ext}`,
+    `get-${name}.${ext}`,
+    `${name}-site.${ext}`
+  ];
+
+  console.log(`💡 Generated ${alternatives.length} alternatives`);
+  return alternatives;
+}
+
+/* =========================================
+   🔄 Ping Porkbun API + Get Server IP
+========================================= */
+app.get('/ping', async (req, res) => {
+  console.log('🔄 Ping request received');
+
+  try {
+    console.log('🔄 Sending ping to Porkbun API');
+    const response = await axios.post(
+      'https://porkbun.com/api/json/v3/ping',
+      {
+        apikey: API_KEY,
+        secretapikey: SECRET_KEY
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 5000 // 5 second timeout
+      }
+    );
+
+    console.log(`✅ Porkbun ping successful: ${JSON.stringify(response.data)}`);
+    res.json({
+      status: response.data.status,
+      message: 'Ping successful',
+      ip: response.data.yourIp
+    });
+  } catch (err) {
+    console.error('❌ Porkbun ping failed:', err.message);
+
+    // Enhanced error response
+    const errorResponse = {
+      error: 'Ping failed',
+      details: err.message,
+      timestamp: new Date().toISOString()
+    };
+
+    // Add response data if available
+    if (err.response && err.response.data) {
+      errorResponse.apiResponse = err.response.data;
+    }
+
+    res.status(500).json(errorResponse);
+  }
+});
+
+/* =========================================
+   📡 My Server IP (to share with Porkbun support)
+========================================= */
+app.get('/my-ip', async (req, res) => {
+  console.log('📡 IP address request received');
+
+  try {
+    console.log('📡 Fetching server IP from ipify');
+    const response = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
+    console.log(`✅ IP fetch successful: ${response.data.ip}`);
+    res.json({ ip: response.data.ip });
+  } catch (err) {
+    console.error('❌ IP fetch failed:', err.message);
+    res.status(500).json({
+      error: 'Failed to fetch IP address.',
+      details: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/* =========================================
+   🧪 Test Route - For checking if API keys work
+========================================= */
+app.get('/test-keys', async (req, res) => {
+  console.log('🧪 Testing API keys');
+
+  try {
+    // First try a ping to see if basic auth works
+    const pingResponse = await axios.post(
+      'https://porkbun.com/api/json/v3/ping',
+      {
+        apikey: API_KEY,
+        secretapikey: SECRET_KEY
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 5000
+      }
+    );
+
+    // If ping works, try a domain check for a known domain
+    const checkResponse = await axios.post(
+      'https://porkbun.com/api/json/v3/check',
+      {
+        apikey: API_KEY,
+        secretapikey: SECRET_KEY,
+        domain: 'example.com'
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 5000
+      }
+    );
+
+    res.json({
+      status: 'success',
+      pingResponse: pingResponse.data,
+      checkResponse: checkResponse.data,
+      message: 'API keys are working correctly'
+    });
+  } catch (err) {
+    console.error('❌ API key test failed:', err.message);
+
+    const errorResponse = {
+      status: 'error',
+      message: 'API key test failed',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    };
+
+    if (err.response) {
+      errorResponse.responseStatus = err.response.status;
+      errorResponse.responseData = err.response.data;
+    }
+
+    res.status(500).json(errorResponse);
+  }
+});
+
+/* =========================================
+   🤖 API: Create Slack Channel
+========================================= */
+app.post('/api/create-slack-channel', async (req, res) => {
+  const { channelName, userEmail, businessName, clientName } = req.body;
+  console.log(`📝 Received Slack channel creation request for: ${channelName}`);
+
+  // Validate input
+  if (!channelName || !userEmail) {
+    console.log('❌ Invalid Slack channel request - missing required fields');
+    return res.status(400).json({
+      error: '❌ Please provide both channelName and userEmail',
+      details: 'Both fields are required to create a Slack channel'
+    });
+  }
+
+  try {
+    // For now, we'll just log the request and return success
+    // In a real implementation, you would use the Slack API to create the channel
+    console.log(`✅ Slack channel request received for: ${channelName}`);
+    console.log(`✅ User email: ${userEmail}`);
+    console.log(`✅ Business name: ${businessName || 'Not provided'}`);
+    console.log(`✅ Client name: ${clientName || 'Not provided'}`);
+
+    // Store the request in a database or send it to another service
+    // This is where you would implement the actual Slack channel creation
+
+    // Return success response
+    return res.json({
+      success: true,
+      channelName: channelName,
+      message: 'Slack channel request received successfully',
+      note: 'Your channel will be created shortly and you will be invited via email'
+    });
+  } catch (err) {
+    console.error(`❌ Error in /api/create-slack-channel endpoint: ${err.message}`);
+
+    // Send a more detailed error response
+    res.status(500).json({
+      error: 'Failed to process Slack channel request.',
+      details: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/* =========================================
+   🚀 Start Server
+========================================= */
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔑 Using API key: ${API_KEY.substring(0, 10)}...`);
+  console.log(`🌐 Server URL: http://localhost:${PORT}`);
+  console.log(`📝 API Endpoints:`);
+  console.log(`   - POST /api/check-domain`);
+  console.log(`   - POST /api/create-slack-channel`);
+  console.log(`   - GET /ping`);
+  console.log(`   - GET /my-ip`);
+  console.log(`   - GET /test-keys`);
+});
