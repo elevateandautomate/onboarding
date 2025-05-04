@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { WebClient } from '@slack/web-api';
 
 // Load environment variables
 dotenv.config();
@@ -10,9 +11,20 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ Porkbun API Credentials
-const API_KEY = process.env.PORKBUN_API_KEY || 'pk1_b66cf696e312c793cea3747eb7f85a6bbe767fb25430ad5419df028a99636b4b';
-const SECRET_KEY = process.env.PORKBUN_SECRET_KEY || 'sk1_05c780319c78ccf836f366b47caf33114f1a57e337cc09fbc08256d59f7cca59';
+// ✅ Porkbun API Credentials - Using environment variables
+const API_KEY = process.env.PORKBUN_API_KEY;
+const SECRET_KEY = process.env.PORKBUN_SECRET_KEY;
+
+// ✅ Slack API Credentials - Using environment variables
+const SLACK_TOKEN = process.env.SLACK_TOKEN;
+const SLACK_HELP_CHANNEL = process.env.SLACK_HELP_CHANNEL || 'client-help';
+
+// Initialize Slack Web Client
+const web = new WebClient(SLACK_TOKEN);
+
+// 👥 Internal Team Slack User IDs - Consider moving to environment variables or database
+const teamMembers = process.env.TEAM_MEMBERS ? process.env.TEAM_MEMBERS.split(',') : 
+                   ['U08PKKX71A7', 'U08PKKUC4UB', 'U08P11AGCMD', 'U08P0JAJQQP'];
 
 // Enable CORS for all origins
 app.use(cors({ origin: '*' }));
@@ -28,6 +40,7 @@ app.use((req, res, next) => {
     const sanitizedBody = { ...req.body };
     if (sanitizedBody.apikey) sanitizedBody.apikey = '***REDACTED***';
     if (sanitizedBody.secretapikey) sanitizedBody.secretapikey = '***REDACTED***';
+    if (sanitizedBody.token) sanitizedBody.token = '***REDACTED***';
     console.log(`📦 Request Body: ${JSON.stringify(sanitizedBody)}`);
   }
   
@@ -108,7 +121,7 @@ async function checkDomainAvailability(domain) {
    🌐 Root Route
 ========================================= */
 app.get('/', (req, res) => {
-  res.send('🚀 Porkbun Domain API is live! Use /api/check-domain POST to check availability.');
+  res.send('🚀 API Server is live! Supports Porkbun domain checks and Slack integration.');
 });
 
 /* =========================================
@@ -318,16 +331,228 @@ app.get('/test-keys', async (req, res) => {
   }
 });
 
-/* =========================================
-   🚀 Start Server
-========================================= */
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔑 Using API key: ${API_KEY.substring(0, 10)}...`);
-  console.log(`🌐 Server URL: http://localhost:${PORT}`);
-  console.log(`📝 API Endpoints:`);
-  console.log(`   - POST /api/check-domain`);
-  console.log(`   - GET /ping`);
-  console.log(`   - GET /my-ip`);
-  console.log(`   - GET /test-keys`);
+/* ============================================================
+   1️⃣ Slack OAuth Callback - Auto Channel Creation
+============================================================ */
+app.get('/success', async (req, res) => {
+    const { code, state } = req.query;
+
+    if (!code || !state) {
+        return res.status(400).send('❌ Missing OAuth code or state.');
+    }
+
+    console.log('✅ OAuth callback received.');
+
+    let parsedState;
+    try {
+        parsedState = JSON.parse(decodeURIComponent(state));
+    } catch (err) {
+        console.error('❌ Failed to parse state:', err);
+        return res.status(400).send('Invalid state data.');
+    }
+
+    const { businessName, yourName, email } = parsedState;
+
+    if (![businessName, yourName, email].every(field => field && field.trim() !== '')) {
+        return res.status(400).send('❌ Missing required info for channel creation.');
+    }
+
+    const channelName = `${businessName}-${yourName}`.toLowerCase().replace(/\s+/g, '-');
+
+    try {
+        const finalChannelId = await getOrCreateChannel(channelName);
+        await inviteTeamMembers(finalChannelId);
+        await inviteClientByEmail(finalChannelId, email);
+
+        res.send(`<h2>🎉 Slack Channel "${channelName}" is Ready!</h2><p>You can now close this window.</p>`);
+    } catch (err) {
+        console.error('❌ Error during Slack channel process:', err);
+        res.status(500).send('Failed to complete Slack channel setup.');
+    }
 });
+
+/* ============================================================
+   🔧 Helper Functions for Slack Channel Creation
+============================================================ */
+
+// Check if channel exists OR create it safely
+async function getOrCreateChannel(channelName) {
+    console.log(`🔎 Checking if channel "${channelName}" exists...`);
+    try {
+        const list = await web.conversations.list({ types: 'private_channel' });
+        const existing = list.channels.find(c => c.name === channelName);
+
+        if (existing) {
+            console.log(`✅ Channel "${channelName}" already exists. Using existing channel.`);
+            return existing.id;
+        }
+
+        console.log(`🚀 Creating new channel "${channelName}"...`);
+        const created = await web.conversations.create({ name: channelName, is_private: true });
+        console.log(`✅ Channel "${channelName}" created.`);
+        return created.channel.id;
+
+    } catch (err) {
+        console.error('❌ Failed to get or create channel:', err);
+        throw err;
+    }
+}
+
+// Invite internal team members
+async function inviteTeamMembers(channelId) {
+    console.log('👥 Inviting internal team members...');
+    try {
+        await web.conversations.invite({ channel: channelId, users: teamMembers.join(',') });
+        console.log('✅ Internal team invited.');
+    } catch (err) {
+        console.error('❌ Failed to invite internal team:', err);
+    }
+}
+
+// Invite client using Slack email
+async function inviteClientByEmail(channelId, slackEmail) {
+    console.log(`📧 Attempting to invite client: ${slackEmail}`);
+    try {
+        const userResult = await web.users.lookupByEmail({ email: slackEmail });
+        await web.conversations.invite({ channel: channelId, users: userResult.user.id });
+        console.log(`✅ Client invited: ${slackEmail}`);
+    } catch (err) {
+        if (err.data && (err.data.error === 'users_not_found' || err.data.error === 'user_not_found')) {
+            console.warn(`⚠️ Client with email "${slackEmail}" not found. Ensure they have joined your Slack workspace.`);
+        } else {
+            console.error('❌ Unexpected error inviting client:', err);
+        }
+    }
+}
+
+/* =========================================
+   🔧 SLACK API INTEGRATION
+========================================= */
+
+/* =========================================
+   📢 Create Slack Channel
+========================================= */
+app.post('/api/create-slack-channel', async (req, res) => {
+  console.log('📢 Create Slack channel request received');
+  
+  const { channelName, businessName, userEmail } = req.body;
+  
+  // Validate input
+  if (!channelName) {
+    return res.status(400).json({
+      error: 'Missing required parameter: channelName',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    // Format channel name to follow Slack's requirements
+    // Lowercase, no spaces, only alphanumeric and hyphens
+    const formattedChannelName = channelName
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-') // Replace multiple hyphens with a single one
+      .substring(0, 80); // Slack has an 80 character limit for channel names
+    
+    console.log(`📢 Creating Slack channel: ${formattedChannelName}`);
+    
+    // Create the channel
+    const channelResult = await web.conversations.create({
+      name: formattedChannelName,
+      is_private: false
+    });
+    
+    console.log(`✅ Slack channel created: ${channelResult.channel.id}`);
+    
+    // If business name and user email are provided, send a welcome message
+    if (businessName && userEmail) {
+      const welcomeMessage = `
+:wave: New client onboarded!
+*Business Name:* ${businessName}
+*Contact Email:* ${userEmail}
+*Channel Created:* ${new Date().toISOString()}
+      `;
+      
+      await web.chat.postMessage({
+        channel: channelResult.channel.id,
+        text: welcomeMessage,
+        parse: 'full'
+      });
+      
+      console.log(`✅ Welcome message sent to channel: ${channelResult.channel.id}`);
+    }
+    
+    res.json({
+      success: true,
+      channelId: channelResult.channel.id,
+      channelName: formattedChannelName,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('❌ Error creating Slack channel:', err.message);
+    
+    const errorResponse = {
+      error: 'Failed to create Slack channel',
+      details: err.message,
+      timestamp: new Date().toISOString()
+    };
+    
+    if (err.data) {
+      errorResponse.slackError = err.data;
+    }
+    
+    res.status(500).json(errorResponse);
+  }
+});
+
+/* =========================================
+   💬 Send Slack Message
+========================================= */
+app.post('/api/send-slack-message', async (req, res) => {
+  console.log('💬 Send Slack message request received');
+  
+  const { channelId, message, blocks } = req.body;
+  
+  // Validate input
+  if (!channelId || (!message && !blocks)) {
+    return res.status(400).json({
+      error: 'Missing required parameters: channelId and either message or blocks',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  try {
+    console.log(`💬 Sending message to Slack channel: ${channelId}`);
+    
+    const messageParams = {
+      channel: channelId,
+      text: message || 'New message from API'
+    };
+    
+    // Add blocks if provided
+    if (blocks) {
+      messageParams.blocks = blocks;
+    }
+    
+    const result = await web.chat.postMessage(messageParams);
+    
+    console.log(`✅ Message sent to Slack channel: ${result.ts}`);
+    
+    res.json({
+      success: true,
+      messageTs: result.ts,
+      channelId: result.channel,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('❌ Error sending Slack message:', err.message);
+    
+    const errorResponse = {
+      error: 'Failed to send Slack message',
+      details: err.message,
+      timestamp: new Date().toISOString()
+    };
+    
+    if (err.data) {
+      errorResponse.slackError = err.data;
+    }
