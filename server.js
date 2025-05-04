@@ -339,18 +339,45 @@ app.post('/api/create-slack-channel', async (req, res) => {
     console.log(`✅ Business name: ${businessName || 'Not provided'}`);
     console.log(`✅ Client name: ${clientName || 'Not provided'}`);
 
+    // Validate channel name according to Slack requirements
+    // Slack channel names can only contain lowercase letters, numbers, hyphens, and underscores
+    // and must be 80 characters or less
+    const sanitizedChannelName = channelName
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '-')
+      .substring(0, 80);
+
+    if (sanitizedChannelName !== channelName) {
+      console.log(`⚠️ Channel name sanitized from "${channelName}" to "${sanitizedChannelName}"`);
+    }
+
     // Initialize Slack client
     const slack = new WebClient(SLACK_BOT_TOKEN);
 
-    // 1. Create the channel
-    console.log(`🔄 Creating private Slack channel: ${channelName}`);
-    const channelResult = await slack.conversations.create({
-      name: channelName,
-      is_private: true
-    });
+    // First test the token to ensure it's valid
+    console.log(`🔄 Testing Slack token before channel creation`);
+    try {
+      const authTest = await slack.auth.test();
+      console.log(`✅ Slack token is valid. Connected as: ${authTest.user} in team: ${authTest.team}`);
+    } catch (authError) {
+      console.error(`❌ Slack token validation failed: ${authError.message}`);
+      throw new Error(`Slack authentication failed: ${authError.message}`);
+    }
 
-    if (!channelResult.ok) {
-      throw new Error(`Failed to create channel: ${channelResult.error}`);
+    // 1. Create the channel
+    console.log(`🔄 Creating private Slack channel: ${sanitizedChannelName}`);
+    try {
+      const channelResult = await slack.conversations.create({
+        name: sanitizedChannelName,
+        is_private: true
+      });
+
+      if (!channelResult.ok) {
+        throw new Error(`Failed to create channel: ${channelResult.error}`);
+      }
+    } catch (channelError) {
+      console.error(`❌ Channel creation error details:`, channelError);
+      throw new Error(`An API error occurred: ${channelError.message || channelError.data?.error || 'unknown error'}`);
     }
 
     const channelId = channelResult.channel.id;
@@ -393,12 +420,17 @@ app.post('/api/create-slack-channel', async (req, res) => {
 Our team will be with you shortly to help with your onboarding process. Feel free to ask any questions here!
     `;
 
-    await slack.chat.postMessage({
-      channel: channelId,
-      text: welcomeMessage,
-      parse: 'full'
-    });
-    console.log(`✅ Welcome message posted to channel`);
+    try {
+      await slack.chat.postMessage({
+        channel: channelId,
+        text: welcomeMessage,
+        parse: 'full'
+      });
+      console.log(`✅ Welcome message posted to channel`);
+    } catch (messageError) {
+      console.warn(`⚠️ Could not post welcome message: ${messageError.message}`);
+      // Continue with success response even if welcome message fails
+    }
 
     // Return success response
     return res.json({
