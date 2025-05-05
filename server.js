@@ -14,6 +14,10 @@ const SECRET_KEY = process.env.PORKBUN_SECRET_KEY;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const slack = new WebClient(SLACK_BOT_TOKEN);
 
+// 👥 Internal Team Slack User IDs to automatically add to channels
+// Example: TEAM_MEMBERS=U08P11AGCMD,U08PKKUC4UB,U08PKKX71A7,U08P0JAJQQP
+const TEAM_MEMBERS = process.env.TEAM_MEMBERS ? process.env.TEAM_MEMBERS.split(',') : [];
+
 // Enable CORS for all origins
 app.use(cors({ origin: '*' }));
 app.use(express.json());
@@ -365,10 +369,11 @@ app.post('/api/create-slack-channel', async (req, res) => {
       throw new Error(`Slack authentication failed: ${slackError}`);
     }
 
-    // 1. Create the channel
+    // 1. Create the channel or find existing one
     console.log(`🔄 Creating private Slack channel: ${sanitizedChannelName}`);
     let channelId;
     try {
+      // Try to create the channel
       const channelResult = await slack.conversations.create({
         name: sanitizedChannelName,
         is_private: true
@@ -381,14 +386,71 @@ app.post('/api/create-slack-channel', async (req, res) => {
       channelId = channelResult.channel.id;
       console.log(`✅ Channel created with ID: ${channelId}`);
     } catch (channelError) {
-      console.error('❌ Channel creation failed:', channelError);
-
+      // Check if error is because channel already exists
       const slackError = channelError.data?.error || channelError.message || 'unknown error';
 
-      throw new Error(`Slack API error: ${slackError}`);
+      if (slackError === 'name_taken') {
+        console.log(`⚠️ Channel "${sanitizedChannelName}" already exists. Trying to find it...`);
+
+        try {
+          // List all private channels
+          const listResult = await slack.conversations.list({
+            types: 'private_channel',
+            exclude_archived: true
+          });
+
+          // Find the channel with the matching name
+          const existingChannel = listResult.channels.find(channel => channel.name === sanitizedChannelName);
+
+          if (existingChannel) {
+            channelId = existingChannel.id;
+            console.log(`✅ Found existing channel with ID: ${channelId}`);
+          } else {
+            // If we can't find it, create a new channel with a timestamp suffix
+            const timestampSuffix = Math.floor(Date.now() / 1000).toString().slice(-4);
+            const newChannelName = `${sanitizedChannelName}-${timestampSuffix}`;
+
+            console.log(`🔄 Creating channel with unique name: ${newChannelName}`);
+            const newChannelResult = await slack.conversations.create({
+              name: newChannelName,
+              is_private: true
+            });
+
+            channelId = newChannelResult.channel.id;
+            console.log(`✅ Created channel with unique name and ID: ${channelId}`);
+          }
+        } catch (findError) {
+          console.error('❌ Error finding or creating alternative channel:', findError);
+          throw new Error(`Could not create or find channel: ${findError.message}`);
+        }
+      } else {
+        // If it's a different error, throw it
+        console.error('❌ Channel creation failed:', channelError);
+        throw new Error(`Slack API error: ${slackError}`);
+      }
     }
 
-    // 2. Find the user by email
+    // 2. Invite team members to the channel
+    if (TEAM_MEMBERS.length > 0) {
+      console.log(`🔄 Inviting team members to channel: ${channelId}`);
+      try {
+        // Join team members into comma-separated string for the API
+        const teamMembersString = TEAM_MEMBERS.join(',');
+
+        await slack.conversations.invite({
+          channel: channelId,
+          users: teamMembersString
+        });
+        console.log(`✅ Team members invited to channel: ${TEAM_MEMBERS.join(', ')}`);
+      } catch (teamError) {
+        console.warn(`⚠️ Could not invite team members: ${teamError.message}`);
+        // Continue even if team member invitation fails
+      }
+    } else {
+      console.log('ℹ️ No team members configured to invite automatically');
+    }
+
+    // 3. Find the user by email
     console.log(`🔄 Looking up user by email: ${userEmail}`);
     try {
       const userLookup = await slack.users.lookupByEmail({
@@ -399,7 +461,7 @@ app.post('/api/create-slack-channel', async (req, res) => {
         const userId = userLookup.user.id;
         console.log(`✅ Found user with ID: ${userId}`);
 
-        // 3. Add the user to the channel
+        // 4. Add the user to the channel
         console.log(`🔄 Adding user ${userId} to channel ${channelId}`);
         await slack.conversations.invite({
           channel: channelId,
@@ -414,7 +476,7 @@ app.post('/api/create-slack-channel', async (req, res) => {
       // Continue with channel creation even if user lookup fails
     }
 
-    // 4. Send a welcome message to the channel
+    // 5. Send a welcome message to the channel
     const welcomeMessage = `
 :wave: Welcome to your dedicated support channel!
 
@@ -454,6 +516,60 @@ Our team will be with you shortly to help with your onboarding process. Feel fre
       details: err.message,
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+/* =========================================
+   � Find Slack User ID by Email
+========================================= */
+app.get('/find-user-id', async (req, res) => {
+  console.log('🔍 Looking up Slack user ID by email');
+
+  const { email } = req.query;
+
+  if (!email) {
+    return res.status(400).json({
+      error: 'Missing email parameter',
+      example: '/find-user-id?email=user@example.com'
+    });
+  }
+
+  try {
+    console.log(`🔍 Looking up user with email: ${email}`);
+    const result = await slack.users.lookupByEmail({
+      email: email
+    });
+
+    if (result.ok && result.user) {
+      console.log(`✅ Found user: ${result.user.name} with ID: ${result.user.id}`);
+      res.json({
+        status: 'success',
+        user: {
+          id: result.user.id,
+          name: result.user.name,
+          real_name: result.user.real_name,
+          email: result.user.profile.email
+        },
+        note: 'Add this ID to your TEAM_MEMBERS environment variable'
+      });
+    } else {
+      res.status(404).json({
+        status: 'error',
+        message: 'User not found',
+        email: email
+      });
+    }
+  } catch (err) {
+    console.error('❌ Error looking up user:', err);
+
+    const errorResponse = {
+      status: 'error',
+      message: 'Failed to look up user',
+      error: err.data?.error || err.message,
+      timestamp: new Date().toISOString()
+    };
+
+    res.status(500).json(errorResponse);
   }
 });
 
@@ -573,6 +689,7 @@ app.listen(PORT, () => {
   console.log(`   - GET /my-ip`);
   console.log(`   - GET /test-keys`);
   console.log(`   - GET /test-slack-token`);
+  console.log(`   - GET /find-user-id`);
   console.log(`   - GET /slack/oauth`);
   console.log(`   - GET /success`);
 });
