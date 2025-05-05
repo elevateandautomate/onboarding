@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { WebClient } from '@slack/web-api';
+import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,6 +18,11 @@ const slack = new WebClient(SLACK_BOT_TOKEN);
 // 👥 Internal Team Slack User IDs to automatically add to channels
 // Example: TEAM_MEMBERS=U08P11AGCMD,U08PKKUC4UB,U08PKKX71A7,U08P0JAJQQP
 const TEAM_MEMBERS = process.env.TEAM_MEMBERS ? process.env.TEAM_MEMBERS.split(',') : [];
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Enable CORS for all origins
 app.use(cors({ origin: '*' }));
@@ -326,7 +332,7 @@ app.get('/test-keys', async (req, res) => {
    🤖 API: Create Slack Channel
 ========================================= */
 app.post('/api/create-slack-channel', async (req, res) => {
-  const { channelName, userEmail, businessName, clientName } = req.body;
+  const { channelName, userEmail, businessName, clientName, selectedProgram } = req.body;
   console.log(`📝 Received Slack channel creation request for: ${channelName}`);
 
   // Validate input
@@ -343,17 +349,69 @@ app.post('/api/create-slack-channel', async (req, res) => {
     console.log(`✅ User email: ${userEmail}`);
     console.log(`✅ Business name: ${businessName || 'Not provided'}`);
     console.log(`✅ Client name: ${clientName || 'Not provided'}`);
+    console.log(`✅ Selected program: ${selectedProgram || 'Not provided'}`);
 
-    // Validate channel name according to Slack requirements
+    // Try to fetch user data from Supabase
+    let userData = null;
+    try {
+      console.log(`🔍 Looking up user data in Supabase for email: ${userEmail}`);
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', userEmail)
+        .single();
+
+      if (error) {
+        console.warn(`⚠️ Error fetching user data from Supabase: ${error.message}`);
+      } else if (data) {
+        userData = data;
+        console.log(`✅ Found user data in Supabase: ${JSON.stringify(userData)}`);
+      } else {
+        console.log(`⚠️ No user data found in Supabase for email: ${userEmail}`);
+      }
+    } catch (supabaseError) {
+      console.warn(`⚠️ Supabase query failed: ${supabaseError.message}`);
+    }
+
+    // Format channel name with specific structure: Brand-Businessname-fullname
+    // Then sanitize according to Slack requirements
+
+    // Extract components from Supabase data or request
+    // Extract brand from selectedProgram (text before parentheses)
+    let brand = "TheConnector"; // Default brand name
+
+    if (selectedProgram) {
+      // Extract text before parentheses if they exist
+      const parenthesesMatch = selectedProgram.match(/(.*?)\s*\(/);
+      if (parenthesesMatch && parenthesesMatch[1]) {
+        // Use the text before parentheses as the brand, trimmed of whitespace
+        brand = parenthesesMatch[1].trim();
+      } else {
+        // If no parentheses, use the whole string
+        brand = selectedProgram.trim();
+      }
+      console.log(`✅ Extracted brand from selected program: ${brand}`);
+    }
+
+    // Use Supabase data if available, but prioritize request data for business name
+    const userFullName = userData?.full_name || clientName || "Client";
+    // For business name, prioritize what the user entered in the request
+    const userBusinessName = businessName || userData?.business_name || "Business";
+
+    // Create structured channel name with format: Brand-Businessname-fullname
+    const structuredChannelName = `${brand}-${userBusinessName}-${userFullName}`;
+    console.log(`🔄 Creating structured channel name: ${structuredChannelName}`);
+
+    // Sanitize according to Slack requirements
     // Slack channel names can only contain lowercase letters, numbers, hyphens, and underscores
     // and must be 80 characters or less
-    const sanitizedChannelName = channelName
+    const sanitizedChannelName = structuredChannelName
       .toLowerCase()
       .replace(/[^a-z0-9-_]/g, '-')
       .substring(0, 80);
 
-    if (sanitizedChannelName !== channelName) {
-      console.log(`⚠️ Channel name sanitized from "${channelName}" to "${sanitizedChannelName}"`);
+    if (sanitizedChannelName !== structuredChannelName) {
+      console.log(`⚠️ Channel name sanitized from "${structuredChannelName}" to "${sanitizedChannelName}"`);
     }
 
     // First test the token to ensure it's valid
@@ -680,7 +738,8 @@ app.get('/success', async (req, res) => {
 ========================================= */
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔑 Using API key: ${API_KEY.substring(0, 10)}...`);
+  console.log(`🔑 Using API key: ${API_KEY ? API_KEY.substring(0, 10) + '...' : 'Not set'}`);
+  console.log(`🔑 Supabase: ${supabaseUrl ? 'Connected' : 'Not configured'}`);
   console.log(`🌐 Server URL: http://localhost:${PORT}`);
   console.log(`📝 API Endpoints:`);
   console.log(`   - POST /api/check-domain`);
