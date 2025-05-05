@@ -360,8 +360,11 @@ app.post('/api/create-slack-channel', async (req, res) => {
       const authTest = await slack.auth.test();
       console.log(`✅ Slack token is valid. Connected as: ${authTest.user} in team: ${authTest.team}`);
     } catch (authError) {
-      console.error(`❌ Slack token validation failed: ${authError.message}`);
-      throw new Error(`Slack authentication failed: ${authError.message}`);
+      console.error('❌ Slack token validation failed:', authError);
+
+      const slackError = authError.data?.error || authError.message || 'unknown error';
+
+      throw new Error(`Slack authentication failed: ${slackError}`);
     }
 
     // 1. Create the channel
@@ -376,8 +379,11 @@ app.post('/api/create-slack-channel', async (req, res) => {
         throw new Error(`Failed to create channel: ${channelResult.error}`);
       }
     } catch (channelError) {
-      console.error(`❌ Channel creation error details:`, channelError);
-      throw new Error(`An API error occurred: ${channelError.message || channelError.data?.error || 'unknown error'}`);
+      console.error('❌ Channel creation failed:', channelError);
+
+      const slackError = channelError.data?.error || channelError.message || 'unknown error';
+
+      throw new Error(`Slack API error: ${slackError}`);
     }
 
     const channelId = channelResult.channel.id;
@@ -474,12 +480,14 @@ app.get('/test-slack-token', async (req, res) => {
       botId: result.bot_id
     });
   } catch (err) {
-    console.error('❌ Slack token test failed:', err.message);
+    console.error('❌ Slack token test failed:', err);
+
+    const slackError = err.data?.error || err.message || 'unknown error';
 
     const errorResponse = {
       status: 'error',
       message: 'Slack token test failed',
-      error: err.message,
+      error: slackError,
       timestamp: new Date().toISOString()
     };
 
