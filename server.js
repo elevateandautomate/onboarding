@@ -7,11 +7,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ✅ Porkbun API Credentials
-const API_KEY = process.env.PORKBUN_API_KEY || 'pk1_f102a22a1cff9e3a1baf3a59feb38764cf556d75890962148a697789c4dc290c';
-const SECRET_KEY = process.env.PORKBUN_SECRET_KEY || 'sk1_bb12902114b667c24cb861d0a4b14209a785f9fae9cb381262107400f4012540';
+const API_KEY = process.env.PORKBUN_API_KEY;
+const SECRET_KEY = process.env.PORKBUN_SECRET_KEY;
 
 // ✅ Slack API Credentials
-const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || 'xoxb-8782622636263-8857484200241-E3JeLNHthQ6wSnhicxQnVGC1';
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const slack = new WebClient(SLACK_BOT_TOKEN);
 
 // Enable CORS for all origins
