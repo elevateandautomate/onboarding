@@ -11,7 +11,7 @@ const API_KEY = process.env.PORKBUN_API_KEY || 'pk1_f102a22a1cff9e3a1baf3a59feb3
 const SECRET_KEY = process.env.PORKBUN_SECRET_KEY || 'sk1_bb12902114b667c24cb861d0a4b14209a785f9fae9cb381262107400f4012540';
 
 // ✅ Slack API Credentials
-const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || 'xoxb-8782622636263-8838593083654-tdQJnQuLcOlrsNPx5QbRYczo';
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || 'xoxb-8782622636263-8857484200241-Eecy5TiBLS03r8JQr3P9lOCX';
 const slack = new WebClient(SLACK_BOT_TOKEN);
 
 // Enable CORS for all origins
@@ -367,6 +367,7 @@ app.post('/api/create-slack-channel', async (req, res) => {
 
     // 1. Create the channel
     console.log(`🔄 Creating private Slack channel: ${sanitizedChannelName}`);
+    let channelId;
     try {
       const channelResult = await slack.conversations.create({
         name: sanitizedChannelName,
@@ -376,6 +377,9 @@ app.post('/api/create-slack-channel', async (req, res) => {
       if (!channelResult.ok) {
         throw new Error(`Failed to create channel: ${channelResult.error}`);
       }
+
+      channelId = channelResult.channel.id;
+      console.log(`✅ Channel created with ID: ${channelId}`);
     } catch (channelError) {
       console.error('❌ Channel creation failed:', channelError);
 
@@ -383,9 +387,6 @@ app.post('/api/create-slack-channel', async (req, res) => {
 
       throw new Error(`Slack API error: ${slackError}`);
     }
-
-    const channelId = channelResult.channel.id;
-    console.log(`✅ Channel created with ID: ${channelId}`);
 
     // 2. Find the user by email
     console.log(`🔄 Looking up user by email: ${userEmail}`);
@@ -491,6 +492,74 @@ app.get('/test-slack-token', async (req, res) => {
 });
 
 /* =========================================
+   � Slack OAuth Endpoints
+========================================= */
+// Main OAuth endpoint
+app.get('/slack/oauth', async (req, res) => {
+  console.log('🔄 Received Slack OAuth request');
+  console.log('Query parameters:', req.query);
+
+  const { code } = req.query;
+
+  if (!code) {
+    console.error('❌ No authorization code received');
+    return res.status(400).send('Missing authorization code');
+  }
+
+  try {
+    // For a complete OAuth implementation, you would exchange the code for a token here
+    // For now, we'll just redirect to the success page
+    console.log('✅ Received authorization code, redirecting to success page');
+    res.redirect('/success');
+  } catch (err) {
+    console.error('❌ Error in OAuth process:', err);
+    res.status(500).send('An error occurred during the OAuth process. Please try again.');
+  }
+});
+
+// Success callback
+app.get('/success', async (req, res) => {
+  console.log('🔄 Received OAuth success callback');
+  console.log('Query parameters:', req.query);
+
+  try {
+    // You can process OAuth code here if needed
+    // For now, just return a success page
+    res.send(`
+      <html>
+        <head>
+          <title>Authorization Successful</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              text-align: center;
+              margin-top: 50px;
+            }
+            .success {
+              color: #2eb67d;
+              font-size: 24px;
+              margin-bottom: 20px;
+            }
+            .message {
+              font-size: 18px;
+              margin-bottom: 30px;
+            }
+          </style>
+        </head>
+        <body>
+          <h1 class="success">✅ Authorization Successful!</h1>
+          <p class="message">Your Slack app has been successfully authorized.</p>
+          <p>You can now close this window and return to your application.</p>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('❌ Error in OAuth success callback:', err);
+    res.status(500).send('An error occurred during the OAuth process. Please try again.');
+  }
+});
+
+/* =========================================
    �🚀 Start Server
 ========================================= */
 app.listen(PORT, () => {
@@ -503,4 +572,7 @@ app.listen(PORT, () => {
   console.log(`   - GET /ping`);
   console.log(`   - GET /my-ip`);
   console.log(`   - GET /test-keys`);
+  console.log(`   - GET /test-slack-token`);
+  console.log(`   - GET /slack/oauth`);
+  console.log(`   - GET /success`);
 });
