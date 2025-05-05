@@ -11,7 +11,8 @@ const API_KEY = process.env.PORKBUN_API_KEY || 'pk1_f102a22a1cff9e3a1baf3a59feb3
 const SECRET_KEY = process.env.PORKBUN_SECRET_KEY || 'sk1_bb12902114b667c24cb861d0a4b14209a785f9fae9cb381262107400f4012540';
 
 // ✅ Slack API Credentials
-const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || 'xoxb-8782622636263-8838593083654-dI5531W31T8wNtKuVqmPWw68';
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN || 'xoxb-8782622636263-8810308655889-qlCPGqfoBpeHYKR65QCzNBuj';
+const slack = new WebClient(SLACK_BOT_TOKEN);
 
 // Enable CORS for all origins
 app.use(cors({ origin: '*' }));
@@ -351,9 +352,6 @@ app.post('/api/create-slack-channel', async (req, res) => {
       console.log(`⚠️ Channel name sanitized from "${channelName}" to "${sanitizedChannelName}"`);
     }
 
-    // Initialize Slack client
-    const slack = new WebClient(SLACK_BOT_TOKEN);
-
     // First test the token to ensure it's valid
     console.log(`🔄 Testing Slack token before channel creation`);
     try {
@@ -465,9 +463,6 @@ app.get('/test-slack-token', async (req, res) => {
   console.log('🔍 Testing Slack token');
 
   try {
-    // Initialize Slack client
-    const slack = new WebClient(SLACK_BOT_TOKEN);
-
     // Test the token
     const result = await slack.auth.test();
 
