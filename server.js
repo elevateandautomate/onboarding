@@ -367,7 +367,6 @@ app.post('/api/create-slack-channel', async (req, res) => {
 
     // 1. Create the channel
     console.log(`🔄 Creating private Slack channel: ${sanitizedChannelName}`);
-    let channelId;
     try {
       const channelResult = await slack.conversations.create({
         name: sanitizedChannelName,
@@ -377,9 +376,6 @@ app.post('/api/create-slack-channel', async (req, res) => {
       if (!channelResult.ok) {
         throw new Error(`Failed to create channel: ${channelResult.error}`);
       }
-
-      channelId = channelResult.channel.id;
-      console.log(`✅ Channel created with ID: ${channelId}`);
     } catch (channelError) {
       console.error('❌ Channel creation failed:', channelError);
 
@@ -387,6 +383,9 @@ app.post('/api/create-slack-channel', async (req, res) => {
 
       throw new Error(`Slack API error: ${slackError}`);
     }
+
+    const channelId = channelResult.channel.id;
+    console.log(`✅ Channel created with ID: ${channelId}`);
 
     // 2. Find the user by email
     console.log(`🔄 Looking up user by email: ${userEmail}`);
